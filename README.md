@@ -1,198 +1,312 @@
-# 🚀 OneHub v2
+# 🏗️ OneHub v2 Infrastructure
 
-> Voice-First Business Intelligence Platform
+This directory contains the Infrastructure as Code (IaC) configuration for OneHub v2 using OpenTofu/Terraform.
 
-OneHub v2 is a comprehensive business operations platform that provides an AI-powered voice interface to manage marketing, sales, and analytics through best-in-class services.
+## 📋 Overview
 
-## 🏗️ Architecture
+The infrastructure is designed for:
+- **High Availability**: Multi-AZ deployment with auto-scaling
+- **Security**: VPC isolation, security groups, encryption at rest and in transit
+- **Cost Optimization**: Spot instances, intelligent auto-scaling with Karpenter
+- **Monitoring**: CloudWatch integration, flow logs, performance insights
+- **Scalability**: Kubernetes-native with horizontal pod autoscaling
 
-This is a Turborepo monorepo containing the complete OneHub v2 platform:
+## 🏛️ Architecture
 
-### Applications
-- **`apps/web`** - Main Next.js web application (customer-facing)
-- **`apps/admin`** - Admin dashboard for platform management
-
-### Services (Microservices)
-- **`services/gateway`** - API Gateway with rate limiting and authentication
-- **`services/auth`** - Authentication and user management service
-- **`services/voice`** - Voice processing and NLU service
-- **`services/dashboard-generator`** - Dynamic dashboard creation service
-- **`services/orchestrator`** - Cross-service intelligence coordination
-
-### Packages (Shared Libraries)
-- **`packages/ui`** - Shared React component library
-- **`packages/config`** - Shared configuration and environment management
-- **`packages/types`** - TypeScript type definitions
-- **`packages/database`** - Database schema and client (Prisma)
-- **`packages/auth`** - Authentication utilities
-- **`packages/adapters/*`** - Service adapter libraries
-  - `hubspot` - HubSpot Marketing Hub integration
-  - `apollo` - Apollo.io lead generation integration
-  - `metabase` - Metabase BI platform integration
-  - `sendgrid` - SendGrid email service integration
-  - `dub` - Dub.co link attribution integration
-  - `zeroentropy` - ZeroEntropy search integration
-  - `intervo` - Intervo.ai conversational AI integration
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        AWS Cloud                           │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                     VPC                             │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │   │
+│  │  │   Public    │  │   Public    │  │   Public    │  │   │
+│  │  │  Subnet     │  │  Subnet     │  │  Subnet     │  │   │
+│  │  │   AZ-1a     │  │   AZ-1b     │  │   AZ-1c     │  │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │   │
+│  │  │   Private   │  │   Private   │  │   Private   │  │   │
+│  │  │   Subnet    │  │   Subnet    │  │   Subnet    │  │   │
+│  │  │    AZ-1a    │  │    AZ-1b    │  │    AZ-1c    │  │   │
+│  │  │             │  │             │  │             │  │   │
+│  │  │ ┌─────────┐ │  │ ┌─────────┐ │  │ ┌─────────┐ │  │   │
+│  │  │ │   EKS   │ │  │ │   EKS   │ │  │ │   EKS   │ │  │   │
+│  │  │ │  Nodes  │ │  │ │  Nodes  │ │  │ │  Nodes  │ │  │   │
+│  │  │ └─────────┘ │  │ └─────────┘ │  │ └─────────┘ │  │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  │   │
+│  │  ┌─────────────┐  ┌─────────────┐                  │   │
+│  │  │     RDS     │  │ ElastiCache │                  │   │
+│  │  │ PostgreSQL  │  │    Redis    │                  │   │
+│  │  └─────────────┘  └─────────────┘                  │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │     S3      │  │ CloudFront  │  │   Route53   │         │
+│  │File Storage │  │     CDN     │  │     DNS     │         │
+│  └─────────────┘  └─────────────┘  └─────────────┘         │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18+ and npm 8+
-- PostgreSQL database (Neon recommended)
-- Redis instance (Upstash recommended)
+
+1. **AWS CLI** configured with appropriate permissions
+2. **OpenTofu** or **Terraform** (>= 1.0)
+3. **kubectl** for Kubernetes management
+4. **AWS permissions** for EKS, VPC, RDS, S3, CloudFront
 
 ### Installation
+
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/onehub-v2.git
-cd onehub-v2
+# Install OpenTofu (recommended)
+curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh | sh
 
-# Install dependencies
-npm install
+# Or install Terraform
+# https://developer.hashicorp.com/terraform/downloads
 
-# Set up environment variables
-cp .env.example .env.local
-# Edit .env.local with your configuration
+# Install AWS CLI
+# https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
 
-# Generate database schema
-npm run db:generate
-npm run db:push
-
-# Start development servers
-npm run dev
+# Install kubectl
+# https://kubernetes.io/docs/tasks/tools/
 ```
 
-### Development URLs
-- **Web App**: http://localhost:3000
-- **Admin Dashboard**: http://localhost:3001
-- **API Gateway**: http://localhost:4000
+### Deployment
 
-## 🛠️ Development
-
-### Available Scripts
+1. **Configure AWS credentials:**
 ```bash
-# Development
-npm run dev          # Start all services in development mode
-npm run build        # Build all applications and services
-npm run test         # Run tests across all packages
-npm run lint         # Lint all code
-npm run type-check   # TypeScript type checking
-
-# Database
-npm run db:generate  # Generate Prisma client
-npm run db:push      # Push schema to database
-npm run db:studio    # Open Prisma Studio
-
-# Docker
-npm run docker:build # Build Docker images for all services
+aws configure
+# or
+export AWS_ACCESS_KEY_ID="your-access-key"
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+export AWS_DEFAULT_REGION="us-west-2"
 ```
 
-### Service Architecture
-```
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│   Frontend      │  │   API Gateway   │  │   Services      │
-│   (Next.js)     │  │   (Express)     │  │   (Multiple)    │
-│   Vercel        │  │   EKS           │  │   EKS Pods      │
-└─────────────────┘  └─────────────────┘  └─────────────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-        ┌─────────────────┐  ┌─────────────────┐
-        │   Database      │  │   Cache         │
-        │   (Neon)        │  │   (Upstash)     │
-        │   Postgres      │  │   Redis         │
-        └─────────────────┘  └─────────────────┘
+2. **Deploy to staging:**
+```bash
+cd infrastructure
+./deploy.sh staging plan     # Review changes
+./deploy.sh staging apply    # Deploy infrastructure
 ```
 
-## 🔧 Configuration
+3. **Deploy to production:**
+```bash
+./deploy.sh production plan  # Review changes
+./deploy.sh production apply # Deploy infrastructure
+```
+
+## 📁 Directory Structure
+
+```
+infrastructure/
+├── main.tf                    # Main Terraform configuration
+├── vpc.tf                     # VPC and networking
+├── eks.tf                     # EKS cluster and Karpenter
+├── database.tf                # RDS PostgreSQL and Redis
+├── storage.tf                 # S3 buckets and CloudFront
+├── deploy.sh                  # Deployment script
+├── environments/
+│   ├── staging/
+│   │   ├── terraform.tfvars   # Staging configuration
+│   │   └── backend.hcl        # Staging state backend
+│   └── production/
+│       ├── terraform.tfvars   # Production configuration
+│       └── backend.hcl        # Production state backend
+└── modules/                   # Reusable Terraform modules
+```
+
+## ⚙️ Configuration
 
 ### Environment Variables
-Each service requires specific environment variables. See individual package README files for details.
 
-Key environment variables:
-- `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string
-- `HUBSPOT_API_KEY` - HubSpot API key
-- `APOLLO_API_KEY` - Apollo.io API key
-- `SENDGRID_API_KEY` - SendGrid API key
-- `AUTH0_SECRET` - Auth0 configuration
+Create environment-specific configurations in `environments/[staging|production]/terraform.tfvars`:
 
-### Service Configuration
-Services are configured through environment variables and configuration files in `packages/config`.
+```hcl
+# Environment
+environment = "staging"
+aws_region  = "us-west-2"
 
-## 🧪 Testing
+# EKS Configuration
+kubernetes_version   = "1.28"
+node_instance_types  = ["t3.medium"]
+min_size            = 1
+max_size            = 5
+desired_size        = 2
 
-```bash
-# Run all tests
-npm run test
-
-# Run tests for specific package
-npm run test --filter=@onehub/ui
-
-# Run tests in watch mode
-npm run test:watch
+# Database Configuration
+postgres_instance_class = "db.t3.micro"
+redis_node_type = "cache.t3.micro"
 ```
 
-## 📦 Deployment
+### Backend Configuration
 
-### Production Build
-```bash
-# Build all applications and services
-npm run build
+State is stored in S3 with DynamoDB locking. Configure in `environments/[env]/backend.hcl`:
 
-# Build Docker images
-npm run docker:build
+```hcl
+bucket         = "onehub-terraform-state-staging"
+key            = "environments/staging/terraform.tfstate"
+region         = "us-west-2"
+encrypt        = true
+dynamodb_table = "onehub-terraform-locks-staging"
 ```
-
-### Deployment Targets
-- **Frontend**: Vercel (recommended) or AWS CloudFront + S3
-- **Services**: AWS EKS with Kubernetes
-- **Database**: Neon PostgreSQL
-- **Cache**: Upstash Redis
-- **CDN**: AWS CloudFront
 
 ## 🔒 Security
 
-- All APIs require authentication via JWT tokens
-- Rate limiting implemented at gateway level
-- CORS configured for production domains
-- Environment variables for sensitive configuration
-- Security headers configured via Helmet.js
+### Network Security
+- **VPC**: Isolated network with public and private subnets
+- **Security Groups**: Restrictive rules for each service
+- **NACLs**: Additional network-level protection
+- **Flow Logs**: VPC traffic monitoring
 
-## 📈 Monitoring
+### Data Protection
+- **Encryption at Rest**: All storage encrypted (RDS, S3, EBS)
+- **Encryption in Transit**: TLS 1.2+ for all connections
+- **Secrets Management**: AWS Secrets Manager for credentials
+- **IAM Roles**: Least privilege access
 
-- Structured logging with Winston
-- Health check endpoints on all services
-- Performance monitoring with OpenTelemetry
-- Error tracking and alerting
+### Monitoring & Compliance
+- **CloudTrail**: API call logging
+- **GuardDuty**: Threat detection
+- **Config**: Configuration compliance
+- **CloudWatch**: Metrics and logging
 
-## 🤝 Contributing
+## 📊 Monitoring
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes
-4. Run tests: `npm run test`
-5. Commit: `git commit -m 'Add amazing feature'`
-6. Push: `git push origin feature/amazing-feature`
-7. Open a Pull Request
+### Key Metrics
+- **EKS Cluster**: Node health, pod status, resource utilization
+- **RDS**: CPU, memory, connections, slow queries
+- **Redis**: Memory usage, cache hit ratio, connections
+- **S3/CloudFront**: Request rates, error rates, cache performance
 
-### Code Style
-- ESLint for code linting
-- Prettier for code formatting
-- TypeScript for type safety
-- Conventional commits for commit messages
+### Alerts
+- High CPU/memory utilization
+- Database connection limits
+- Disk space warnings
+- Application error rates
+- Security incidents
 
-## 📄 License
+## 💰 Cost Optimization
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### Strategies Implemented
+- **Spot Instances**: For non-critical workloads
+- **Karpenter**: Intelligent node provisioning and scaling
+- **S3 Lifecycle**: Automatic data archival
+- **RDS**: Right-sized instances with monitoring
+- **CloudFront**: Edge caching to reduce origin load
+
+### Cost Monitoring
+- **AWS Cost Explorer**: Track spending by service
+- **Budgets**: Set alerts for cost thresholds
+- **Resource Tagging**: Cost allocation by environment/team
+
+## 🔧 Operations
+
+### Daily Operations
+```bash
+# Check cluster status
+kubectl get nodes
+
+# View running pods
+kubectl get pods --all-namespaces
+
+# Check service health
+kubectl get services
+
+# View logs
+kubectl logs -f deployment/[service-name]
+```
+
+### Scaling Operations
+```bash
+# Scale deployment
+kubectl scale deployment [service-name] --replicas=5
+
+# Check Karpenter provisioning
+kubectl get nodes -l karpenter.sh/provisioner-name
+
+# View resource usage
+kubectl top nodes
+kubectl top pods
+```
+
+### Backup Operations
+- **RDS**: Automated daily backups (7-day retention)
+- **S3**: Versioning enabled for critical buckets
+- **EKS**: Configuration stored in Git
+- **Secrets**: Backed up in AWS Secrets Manager
+
+## 🚨 Disaster Recovery
+
+### Recovery Time Objectives (RTO)
+- **Database**: < 15 minutes (Multi-AZ failover)
+- **Application**: < 5 minutes (K8s self-healing)
+- **CDN**: < 1 minute (Global edge locations)
+
+### Recovery Point Objectives (RPO)
+- **Database**: < 5 minutes (continuous backup)
+- **File Storage**: < 1 hour (S3 versioning)
+- **Configuration**: 0 (stored in Git)
+
+### Backup Strategy
+1. **Automated RDS backups** with point-in-time recovery
+2. **S3 cross-region replication** for critical data
+3. **Infrastructure as Code** for rapid rebuild
+4. **Database snapshots** before major changes
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+**EKS Nodes Not Joining Cluster:**
+```bash
+# Check IAM roles and security groups
+aws eks describe-cluster --name onehub-v2-staging
+kubectl get nodes
+```
+
+**Database Connection Issues:**
+```bash
+# Check security groups and connection strings
+aws rds describe-db-instances
+aws secretsmanager get-secret-value --secret-id [secret-arn]
+```
+
+**High Costs:**
+```bash
+# Check resource utilization
+kubectl top nodes
+kubectl top pods --all-namespaces
+aws ce get-cost-and-usage --time-period Start=2024-01-01,End=2024-01-31
+```
+
+### Health Checks
+```bash
+# Infrastructure health
+./deploy.sh [env] plan  # Check for drift
+
+# Application health
+kubectl get componentstatuses
+kubectl cluster-info
+
+# Network connectivity
+kubectl exec -it [pod-name] -- curl [service-endpoint]
+```
+
+## 📚 Additional Resources
+
+- [AWS EKS Best Practices](https://aws.github.io/aws-eks-best-practices/)
+- [Karpenter Documentation](https://karpenter.sh/)
+- [OpenTofu Documentation](https://opentofu.org/docs/)
+- [Kubernetes Documentation](https://kubernetes.io/docs/)
 
 ## 🆘 Support
 
-For support and questions:
-- 📧 Email: support@onehub.ai
-- 📖 Documentation: [docs.onehub.ai](https://docs.onehub.ai)
-- 💬 Discord: [OneHub Community](https://discord.gg/onehub)
+For infrastructure support:
+1. Check this README for common solutions
+2. Review CloudWatch logs and metrics
+3. Check the [troubleshooting guide](./docs/troubleshooting.md)
+4. Create an issue with infrastructure logs and error messages
 
 ---
 
-**Built with ❤️ by the OneHub Team**
+**Remember**: Always test changes in staging before applying to production!
