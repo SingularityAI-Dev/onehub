@@ -1,4 +1,6 @@
 import re
+import os
+import requests
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
@@ -22,6 +24,7 @@ class ConverseResponse(BaseModel):
 
 class ScriptedConversationEngine:
     def __init__(self):
+        self.dashboard_generator_url = os.getenv("DASHBOARD_GENERATOR_URL", "http://localhost:8002")
         # The conversation tree is defined here.
         self.conversation_tree = {
             "GREETING": {
@@ -69,6 +72,16 @@ class ScriptedConversationEngine:
         for pattern, next_state_name in state_node.get("transitions", {}).items():
             if re.search(pattern, transcript, re.IGNORECASE):
                 next_node = self.conversation_tree[next_state_name]
+
+                # If this is the action state, trigger the dashboard generator
+                if next_state_name == "ACTION":
+                    try:
+                        # This is a fire-and-forget call for now to pre-warm the dashboard config
+                        requests.get(f"{self.dashboard_generator_url}/api/v1/dashboard/config", timeout=2)
+                    except requests.RequestException as e:
+                        # Log the error but don't fail the conversation
+                        print(f"Could not pre-warm dashboard config: {e}")
+
                 return ConverseResponse(
                     response_text=next_node["response_text"],
                     particle_expression=next_node["particle_expression"],

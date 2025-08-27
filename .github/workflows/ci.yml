@@ -67,6 +67,8 @@ jobs:
           cd ../gateway && go mod tidy && go test ./...
           echo "  - Running voice service tests..."
           cd ../voice && pip install -r requirements.txt && pytest
+          echo "  - Running dashboard-generator service tests..."
+          cd ../dashboard-generator && go mod tidy && go test ./...
           echo "TESTS COMPLETE."
 
   build:

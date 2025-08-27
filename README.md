@@ -309,4 +309,26 @@ For infrastructure support:
 
 ---
 
+## 🐳 Local Development Environment
+
+This project includes a `docker-compose.yml` file to easily run third-party services required for local development.
+
+### Running Metabase Locally
+
+To test the dashboard functionality, you can run a local Metabase instance.
+
+**Prerequisites:**
+- Docker and Docker Compose
+
+**To start the Metabase instance:**
+```bash
+docker-compose up -d
+```
+
+- Metabase will be available at `http://localhost:3000`.
+- You will need to complete the initial setup, connect it to a data source (like a local Postgres DB), and create a dashboard.
+- To enable the secure embedding feature, go to **Admin Settings -> Embedding**.
+
+---
+
 **Remember**: Always test changes in staging before applying to production!

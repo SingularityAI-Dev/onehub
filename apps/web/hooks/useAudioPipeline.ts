@@ -1,10 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { useConversationStore, Message } from "@/lib/store"
 
 // --- Web Speech API Typings ---
-// The Web Speech API is not yet fully standardized, so we need to add some types manually.
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
 }
@@ -20,34 +20,14 @@ declare var webkitSpeechRecognition: { new(): SpeechRecognition }
 
 
 export const useAudioPipeline = () => {
-  const { agentStatus, setAgentStatus, addMessage, openModal, isModalOpen } = useConversationStore()
+  const { agentStatus, setAgentStatus, addMessage, closeModal, isModalOpen } = useConversationStore()
   const [error, setError] = useState<string | null>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const router = useRouter()
 
   // --- Text-to-Speech (TTS) ---
-  const playAudio = async (text: string) => {
-    setAgentStatus("thinking") // Thinking while we fetch the audio
-
-    // --- ElevenLabs API Call (Placeholder) ---
-    // In a real app, you would fetch the audio from ElevenLabs here.
-    // const ELEVENLABS_API_KEY = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY;
-    // if (ELEVENLABS_API_KEY) {
-    //   try {
-    //     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/...`, {
-    //       method: 'POST',
-    //       headers: { 'xi-api-key': ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
-    //       body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2', voice_settings: { ... } })
-    //     });
-    //     const audioBlob = await response.blob();
-    //     const audioUrl = URL.createObjectURL(audioBlob);
-    //     const audio = new Audio(audioUrl);
-    //     // Here you would use the Web Audio API to play the audio
-    //     // ...
-    //     return;
-    //   } catch (err) {
-    //     console.error("Error fetching from ElevenLabs, falling back to browser TTS.", err);
-    //   }
-    // }
+  const playAudio = async (text: string, isFinal: boolean) => {
+    setAgentStatus("thinking")
 
     // --- Fallback: Browser's built-in Speech Synthesis ---
     if ('speechSynthesis' in window) {
@@ -55,8 +35,8 @@ export const useAudioPipeline = () => {
       utterance.onstart = () => setAgentStatus("speaking")
       utterance.onend = () => {
         setAgentStatus("idle")
-        // After speaking, automatically start listening again for a natural conversation flow
-        if (recognitionRef.current) {
+        // If the conversation is not over, start listening again.
+        if (!isFinal && recognitionRef.current) {
           recognitionRef.current.start()
         }
       }
@@ -80,7 +60,16 @@ export const useAudioPipeline = () => {
       const auraMessage: Message = { id: crypto.randomUUID(), sender: "aura", text: data.response_text }
       addMessage(auraMessage)
 
-      await playAudio(data.response_text)
+      // Play the audio response
+      await playAudio(data.response_text, data.is_final)
+
+      // If the conversation is finished, close the modal and redirect
+      if (data.is_final) {
+        setTimeout(() => {
+          closeModal()
+          router.push("/dashboard")
+        }, 2000) // Add a small delay so the user hears the final message
+      }
 
     } catch (err) {
       setError("Failed to communicate with the voice service.")
@@ -120,7 +109,7 @@ export const useAudioPipeline = () => {
     return () => {
       recognition.stop()
     }
-  }, [isModalOpen]) // Re-run effect when modal opens/closes
+  }, [isModalOpen])
 
   return { error }
 }

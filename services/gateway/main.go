@@ -11,9 +11,10 @@ import (
 
 // --- Configuration ---
 type Config struct {
-	Port            string
-	AuthServiceURL  string
-	VoiceServiceURL string
+	Port                   string
+	AuthServiceURL         string
+	VoiceServiceURL        string
+	DashboardGeneratorURL string
 }
 
 // --- Main Application ---
@@ -43,6 +44,12 @@ func main() {
 			return proxy.Forward(cfg.VoiceServiceURL)(c)
 		}
 
+		// Route to Dashboard Generator Service
+		if strings.HasPrefix(path, "/api/v1/dashboard") {
+			log.Printf("Proxying request to Dashboard Generator Service: %s", path)
+			return proxy.Forward(cfg.DashboardGeneratorURL)(c)
+		}
+
 		log.Printf("No route matched for path: %s", path)
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "Not Found",
@@ -58,9 +65,10 @@ func main() {
 // --- Helpers ---
 func loadConfig() Config {
 	return Config{
-		Port:            getEnv("PORT", "8000"),
-		AuthServiceURL:  getEnv("AUTH_SERVICE_URL", "http://localhost:8080"), // Default for local dev
-		VoiceServiceURL: getEnv("VOICE_SERVICE_URL", "http://localhost:8001"), // Default for local dev
+		Port:                   getEnv("PORT", "8000"),
+		AuthServiceURL:         getEnv("AUTH_SERVICE_URL", "http://localhost:8080"),         // Default for local dev
+		VoiceServiceURL:        getEnv("VOICE_SERVICE_URL", "http://localhost:8001"),        // Default for local dev
+		DashboardGeneratorURL: getEnv("DASHBOARD_GENERATOR_URL", "http://localhost:8002"), // Default for local dev
 	}
 }
 
