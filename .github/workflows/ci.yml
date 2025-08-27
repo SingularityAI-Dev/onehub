@@ -62,7 +62,11 @@ jobs:
           echo "  - Running frontend tests..."
           # npm test --workspace=apps/web
           echo "  - Running auth service tests..."
-          cd services/auth && go test ./...
+          cd services/auth && go mod tidy && go test ./...
+          echo "  - Running gateway service tests..."
+          cd ../gateway && go mod tidy && go test ./...
+          echo "  - Running voice service tests..."
+          cd ../voice && pip install -r requirements.txt && pytest
           echo "TESTS COMPLETE."
 
   build:
