@@ -61,8 +61,8 @@ jobs:
           echo "PRETENDING TO RUN UNIT TESTS..."
           echo "  - Running frontend tests..."
           # npm test --workspace=apps/web
-          echo "  - Running backend service tests..."
-          # go test ./...
+          echo "  - Running auth service tests..."
+          cd services/auth && go test ./...
           echo "TESTS COMPLETE."
 
   build:
