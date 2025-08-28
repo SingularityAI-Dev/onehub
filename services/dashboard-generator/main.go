@@ -5,108 +5,130 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// --- Configuration ---
-type Config struct {
-	Port                   string
-	MetabaseSiteURL        string
-	MetabaseEmbeddingSecret string
-	MetabaseDashboardID    string
+// --- Data Structures for widgetManifestV2 ---
+
+type WidgetConfig struct {
+	ID     string `json:"id"`
+	Type   string `json:"type"`
+	Grid   Grid   `json:"grid"`
+	Config any    `json:"config,omitempty"`
+}
+
+type Grid struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+	W int `json:"w"`
+	H int `json:"h"`
+}
+
+type DashboardManifest struct {
+	Widgets []WidgetConfig `json:"widgets"`
 }
 
 // --- Main Application ---
 func main() {
-	cfg := loadConfig()
-
 	app := fiber.New()
+	app.Get("/health", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"status": "ok"}) })
+	app.Get("/api/v1/dashboard/config", handleGetDashboardConfig)
 
-	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
-	})
+	port := getEnv("PORT", "8002")
+	log.Printf("Dashboard Generator service starting on port %s", port)
+	if err := app.Listen(":" + port); err != nil { log.Fatalf("Failed to start server: %v", err) }
+}
 
-	// NOTE: In a real-world scenario, this endpoint would be authenticated.
-	// It would validate the user's JWT from the auth service to get a user ID.
-	// For this sprint, we are just returning a generic, signed URL.
-	app.Get("/api/v1/dashboard/config", func(c *fiber.Ctx) error {
-		// In a real app, you would pass the user's ID here for row-level security.
-		// For now, we'll pass a placeholder.
-		signedURL, err := generateMetabaseEmbeddingURL(cfg, "placeholder-user-id")
-		if err != nil {
-			log.Printf("Error generating Metabase URL: %v", err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": "Failed to generate dashboard URL",
-			})
-		}
+// --- API Handler ---
+func handleGetDashboardConfig(c *fiber.Ctx) error {
+	// In a real app, the user's entitlements would be derived from their JWT.
+	// Here, we simulate it by reading a query param.
+	servicesQuery := c.Query("services", "business_intelligence")
+	requestedServices := strings.Split(servicesQuery, ",")
 
-		return c.JSON(fiber.Map{
-			"metabaseDashboardUrl": signedURL,
-		})
-	})
-
-	log.Printf("Dashboard Generator service starting on port %s", cfg.Port)
-	if err := app.Listen(":" + cfg.Port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	manifest, err := generateDashboardManifest(requestedServices)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	return c.JSON(manifest)
+}
+
+// --- Manifest Generation ---
+func generateDashboardManifest(services []string) (*DashboardManifest, error) {
+	manifest := &DashboardManifest{Widgets: []WidgetConfig{}}
+
+	// Use a map for efficient lookup
+	serviceSet := make(map[string]bool)
+	for _, s := range services {
+		serviceSet[s] = true
+	}
+
+	// Dynamically add widgets based on requested services
+	if serviceSet["business_intelligence"] {
+		signedURL, err := generateMetabaseEmbeddingURL()
+		if err != nil { return nil, err }
+		manifest.Widgets = append(manifest.Widgets, WidgetConfig{
+			ID: "metabase-widget", Type: "Metabase", Grid: Grid{X: 0, Y: 0, W: 8, H: 4},
+			Config: fiber.Map{"url": signedURL},
+		})
+	}
+	if serviceSet["lead_generation"] {
+		manifest.Widgets = append(manifest.Widgets, WidgetConfig{
+			ID: "apollo-widget", Type: "ApolloLeadFinder", Grid: Grid{X: 8, Y: 0, W: 4, H: 4},
+		})
+	}
+	if serviceSet["marketing_automation"] {
+		manifest.Widgets = append(manifest.Widgets, WidgetConfig{
+			ID: "hubspot-widget", Type: "HubSpotCampaignMonitor", Grid: Grid{X: 0, Y: 4, W: 12, H: 2},
+		})
+	}
+
+	return manifest, nil
 }
 
 // --- Metabase Embedding Logic ---
-func generateMetabaseEmbeddingURL(cfg Config, userID string) (string, error) {
-	// Create the JWT claims for Metabase embedding
+func generateMetabaseEmbeddingURL() (string, error) {
+	cfg := loadMetabaseConfig()
 	claims := jwt.MapClaims{
-		"resource": jwt.MapClaims{
-			"dashboard": mustParseInt(cfg.MetabaseDashboardID),
-		},
-		"params": jwt.MapClaims{
-			// "user_id": userID, // Example of a locked parameter for row-level security
-		},
-		"exp": time.Now().Add(time.Minute * 10).Unix(), // Expiration time
+		"resource": jwt.MapClaims{"dashboard": mustParseInt(cfg.DashboardID)},
+		"params":   jwt.MapClaims{},
+		"exp":      time.Now().Add(time.Minute * 10).Unix(),
 	}
-
-	// Create and sign the token
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signedToken, err := token.SignedString([]byte(cfg.MetabaseEmbeddingSecret))
+	signedToken, err := token.SignedString([]byte(cfg.EmbeddingSecret))
 	if err != nil {
 		return "", err
 	}
-
-	// Construct the final URL
-	url := fmt.Sprintf(
-		"%s/embed/dashboard/%s#bordered=true&titled=true",
-		cfg.MetabaseSiteURL,
-		signedToken,
-	)
-	return url, nil
+	return fmt.Sprintf("%s/embed/dashboard/%s#bordered=false&titled=false", cfg.SiteURL, signedToken), nil
 }
 
+// --- Config & Helpers ---
+type MetabaseConfig struct {
+	SiteURL        string
+	EmbeddingSecret string
+	DashboardID    string
+}
 
-// --- Helpers ---
-func loadConfig() Config {
-	return Config{
-		Port:                   getEnv("PORT", "8002"),
-		MetabaseSiteURL:        getEnv("METABASE_SITE_URL", "http://localhost:3000"),
-		MetabaseEmbeddingSecret: getEnv("METABASE_EMBEDDING_SECRET", "my-super-secret-key-that-should-be-long-and-random"),
-		MetabaseDashboardID:    getEnv("METABASE_DASHBOARD_ID", "1"), // Default to dashboard ID 1
+func loadMetabaseConfig() MetabaseConfig {
+	return MetabaseConfig{
+		SiteURL:        getEnv("METABASE_SITE_URL", "http://localhost:3000"),
+		EmbeddingSecret: getEnv("METABASE_EMBEDDING_SECRET", "my-super-secret-key-that-should-be-long-and-random"),
+		DashboardID:    getEnv("METABASE_DASHBOARD_ID", "1"),
 	}
 }
 
 func getEnv(key, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok {
-		return value
-	}
+	if value, ok := os.LookupEnv(key); ok { return value }
 	return fallback
 }
 
-// Helper to parse string to int, panics on error.
-// Should only be used with values that are known to be valid integers.
 func mustParseInt(s string) int {
 	i, err := strconv.Atoi(s)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to parse integer from string '%s': %v", s, err))
-	}
+	if err != nil { panic(fmt.Sprintf("Failed to parse integer from string '%s': %v", s, err)) }
 	return i
 }

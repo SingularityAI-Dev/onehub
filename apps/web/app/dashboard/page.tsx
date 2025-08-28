@@ -3,28 +3,40 @@
 import * as React from "react"
 import RGL, { WidthProvider } from "react-grid-layout"
 import { Navigation } from "@/components/ui/Navigation"
-import { MetabaseWidget } from "@/components/dashboard/MetabaseWidget"
 import { ConversationModal } from "@/components/conversation/ConversationModal"
+import { WidgetFactory } from "@/components/dashboard/WidgetFactory"
 
 const ReactGridLayout = WidthProvider(RGL)
 
+// Define the structure of the manifest we expect from the backend
+interface WidgetConfig {
+  id: string;
+  type: string;
+  grid: { x: number; y: number; w: number; h: number };
+  config?: any;
+}
+
+interface DashboardManifest {
+  widgets: WidgetConfig[];
+}
+
 export default function DashboardPage() {
-  const [metabaseUrl, setMetabaseUrl] = React.useState<string | null>(null)
+  const [manifest, setManifest] = React.useState<DashboardManifest | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
 
   React.useEffect(() => {
     const fetchDashboardConfig = async () => {
       try {
         setIsLoading(true)
-        const response = await fetch("/api/v1/dashboard/config")
+        // For the demo, we'll request all available widgets
+        const response = await fetch("/api/v1/dashboard/config?services=business_intelligence,lead_generation,marketing_automation")
         if (!response.ok) {
           throw new Error("Failed to fetch dashboard configuration")
         }
-        const data = await response.json()
-        setMetabaseUrl(data.metabaseDashboardUrl)
+        const data: DashboardManifest = await response.json()
+        setManifest(data)
       } catch (error) {
         console.error(error)
-        // Handle error state in UI if necessary
       } finally {
         setIsLoading(false)
       }
@@ -33,10 +45,11 @@ export default function DashboardPage() {
     fetchDashboardConfig()
   }, [])
 
-
-  const layout = [
-    { i: "metabase-widget", x: 0, y: 0, w: 12, h: 5 },
-  ]
+  // Convert our manifest's grid config to the format react-grid-layout expects
+  const layout = manifest?.widgets.map(w => ({
+    i: w.id,
+    ...w.grid,
+  })) || []
 
   return (
     <>
@@ -45,11 +58,11 @@ export default function DashboardPage() {
         <Navigation />
         <main className="flex-1 p-4 md:p-8">
           <h1 className="text-lg font-semibold md:text-2xl mb-4">
-            My Platform Analytics
+            My Dynamic Dashboard
           </h1>
           {isLoading ? (
             <div className="w-full h-[500px] flex items-center justify-center bg-muted rounded-lg">
-              <p>Loading Dashboard...</p>
+              <p>Generating your personalized dashboard...</p>
             </div>
           ) : (
             <ReactGridLayout
@@ -60,9 +73,11 @@ export default function DashboardPage() {
               isDraggable
               isResizable
             >
-              <div key="metabase-widget" className="bg-card rounded-lg p-1 shadow-sm">
-                <MetabaseWidget url={metabaseUrl} />
-              </div>
+              {manifest?.widgets.map(widget => (
+                <div key={widget.id} className="bg-card rounded-lg p-1 shadow-sm overflow-hidden">
+                  <WidgetFactory widget={widget} />
+                </div>
+              ))}
             </ReactGridLayout>
           )}
         </main>

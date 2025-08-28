@@ -15,6 +15,7 @@ type Config struct {
 	AuthServiceURL         string
 	VoiceServiceURL        string
 	DashboardGeneratorURL string
+	NLUServiceURL          string
 }
 
 // --- Main Application ---
@@ -50,6 +51,12 @@ func main() {
 			return proxy.Forward(cfg.DashboardGeneratorURL)(c)
 		}
 
+		// Route to NLU Service
+		if strings.HasPrefix(path, "/nlu/parse") {
+			log.Printf("Proxying request to NLU Service: %s", path)
+			return proxy.Forward(cfg.NLUServiceURL)(c)
+		}
+
 		log.Printf("No route matched for path: %s", path)
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "Not Found",
@@ -69,6 +76,7 @@ func loadConfig() Config {
 		AuthServiceURL:         getEnv("AUTH_SERVICE_URL", "http://localhost:8080"),         // Default for local dev
 		VoiceServiceURL:        getEnv("VOICE_SERVICE_URL", "http://localhost:8001"),        // Default for local dev
 		DashboardGeneratorURL: getEnv("DASHBOARD_GENERATOR_URL", "http://localhost:8002"), // Default for local dev
+		NLUServiceURL:          getEnv("NLU_SERVICE_URL", "http://localhost:8003"),          // Default for local dev
 	}
 }
 
