@@ -1,18 +1,24 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// --- Data Structures for widgetManifestV2 ---
+// --- Data Structures ---
+type CreateDashboardRequest struct {
+	Name       string `json:"name"`
+	TemplateID string `json:"templateId"`
+}
 
 type WidgetConfig struct {
 	ID     string `json:"id"`
@@ -21,22 +27,26 @@ type WidgetConfig struct {
 	Config any    `json:"config,omitempty"`
 }
 
-type Grid struct {
-	X int `json:"x"`
-	Y int `json:"y"`
-	W int `json:"w"`
-	H int `json:"h"`
-}
+type Grid struct { X, Y, W, H int }
 
 type DashboardManifest struct {
+	ID      string         `json:"id"`
+	Name    string         `json:"name"`
 	Widgets []WidgetConfig `json:"widgets"`
 }
 
 // --- Main Application ---
 func main() {
+	dbpool := connectDB()
+	defer dbpool.Close()
+
 	app := fiber.New()
 	app.Get("/health", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"status": "ok"}) })
-	app.Get("/api/v1/dashboard/config", handleGetDashboardConfig)
+
+	// The new endpoint to create a dashboard
+	app.Post("/api/v1/dashboards", func(c *fiber.Ctx) error {
+		return handleCreateDashboard(c, dbpool)
+	})
 
 	port := getEnv("PORT", "8002")
 	log.Printf("Dashboard Generator service starting on port %s", port)
@@ -44,51 +54,57 @@ func main() {
 }
 
 // --- API Handler ---
-func handleGetDashboardConfig(c *fiber.Ctx) error {
-	// In a real app, the user's entitlements would be derived from their JWT.
-	// Here, we simulate it by reading a query param.
-	servicesQuery := c.Query("services", "business_intelligence")
-	requestedServices := strings.Split(servicesQuery, ",")
+func handleCreateDashboard(c *fiber.Ctx, db *pgxpool.Pool) error {
+	// 1. Parse request
+	req := new(CreateDashboardRequest)
+	if err := c.BodyParser(req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Cannot parse request"})
+	}
 
-	manifest, err := generateDashboardManifest(requestedServices)
+	// In a real app, User ID would come from JWT middleware
+	userID := "a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1" // Placeholder
+
+	// 2. Create dashboard record in DB
+	var dashboardID, dashboardName string
+	err := db.QueryRow(context.Background(),
+		`INSERT INTO dashboards (user_id, name, template_id) VALUES ($1, $2, $3) RETURNING id, name`,
+		userID, req.Name, req.TemplateID,
+	).Scan(&dashboardID, &dashboardName)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		log.Printf("DB Error creating dashboard: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Could not create dashboard"})
+	}
+
+	// 3. For this sprint, we'll hardcode the creation of two widgets.
+	// A real implementation would use the templateId to look up which widgets to create.
+
+	// 3a. Create Metabase widget
+	metabaseURL, err := generateMetabaseEmbeddingURL()
+	if err != nil { return err }
+	metabaseWidget := WidgetConfig{
+		ID: "metabase-widget", Type: "Metabase", Grid: Grid{X: 0, Y: 0, W: 8, H: 4},
+		Config: fiber.Map{"url": metabaseURL},
+	}
+
+	// 3b. Create HubSpot widget (by calling the adapter)
+	// NOTE: The adapter call is currently fire-and-forget, as we use mock data on the frontend.
+	// A real implementation would fetch data here and pass it to the widget config.
+	go func() {
+		hubspotAdapterURL := getEnv("HUBSPOT_ADAPTER_URL", "http://localhost:8004")
+		http.Post(fmt.Sprintf("%s/adapter/hubspot/query", hubspotAdapterURL), "application/json", nil)
+	}()
+	hubspotWidget := WidgetConfig{
+		ID: "hubspot-widget", Type: "HubSpotCampaignMonitor", Grid: Grid{X: 8, Y: 0, W: 4, H: 4},
+	}
+
+	// 4. Construct the final manifest
+	manifest := DashboardManifest{
+		ID:      dashboardID,
+		Name:    dashboardName,
+		Widgets: []WidgetConfig{metabaseWidget, hubspotWidget},
 	}
 
 	return c.JSON(manifest)
-}
-
-// --- Manifest Generation ---
-func generateDashboardManifest(services []string) (*DashboardManifest, error) {
-	manifest := &DashboardManifest{Widgets: []WidgetConfig{}}
-
-	// Use a map for efficient lookup
-	serviceSet := make(map[string]bool)
-	for _, s := range services {
-		serviceSet[s] = true
-	}
-
-	// Dynamically add widgets based on requested services
-	if serviceSet["business_intelligence"] {
-		signedURL, err := generateMetabaseEmbeddingURL()
-		if err != nil { return nil, err }
-		manifest.Widgets = append(manifest.Widgets, WidgetConfig{
-			ID: "metabase-widget", Type: "Metabase", Grid: Grid{X: 0, Y: 0, W: 8, H: 4},
-			Config: fiber.Map{"url": signedURL},
-		})
-	}
-	if serviceSet["lead_generation"] {
-		manifest.Widgets = append(manifest.Widgets, WidgetConfig{
-			ID: "apollo-widget", Type: "ApolloLeadFinder", Grid: Grid{X: 8, Y: 0, W: 4, H: 4},
-		})
-	}
-	if serviceSet["marketing_automation"] {
-		manifest.Widgets = append(manifest.Widgets, WidgetConfig{
-			ID: "hubspot-widget", Type: "HubSpotCampaignMonitor", Grid: Grid{X: 0, Y: 4, W: 12, H: 2},
-		})
-	}
-
-	return manifest, nil
 }
 
 // --- Metabase Embedding Logic ---
@@ -123,12 +139,24 @@ func loadMetabaseConfig() MetabaseConfig {
 }
 
 func getEnv(key, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok { return value }
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
 	return fallback
 }
 
 func mustParseInt(s string) int {
 	i, err := strconv.Atoi(s)
-	if err != nil { panic(fmt.Sprintf("Failed to parse integer from string '%s': %v", s, err)) }
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse integer from string '%s': %v", s, err))
+	}
 	return i
+}
+
+func connectDB() *pgxpool.Pool {
+	dbpool, err := pgxpool.New(context.Background(), getEnv("DATABASE_URL", "postgres://user:pass@host:port/db?sslmode=disable"))
+	if err != nil {
+		log.Fatalf("Unable to connect to database: %v\n", err)
+	}
+	return dbpool
 }

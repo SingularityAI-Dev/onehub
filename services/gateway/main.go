@@ -16,6 +16,7 @@ type Config struct {
 	VoiceServiceURL        string
 	DashboardGeneratorURL string
 	NLUServiceURL          string
+	HubSpotAdapterURL      string
 }
 
 // --- Main Application ---
@@ -57,6 +58,12 @@ func main() {
 			return proxy.Forward(cfg.NLUServiceURL)(c)
 		}
 
+		// Route to HubSpot Adapter
+		if strings.HasPrefix(path, "/adapter/hubspot") {
+			log.Printf("Proxying request to HubSpot Adapter: %s", path)
+			return proxy.Forward(cfg.HubSpotAdapterURL)(c)
+		}
+
 		log.Printf("No route matched for path: %s", path)
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "Not Found",
@@ -77,6 +84,7 @@ func loadConfig() Config {
 		VoiceServiceURL:        getEnv("VOICE_SERVICE_URL", "http://localhost:8001"),        // Default for local dev
 		DashboardGeneratorURL: getEnv("DASHBOARD_GENERATOR_URL", "http://localhost:8002"), // Default for local dev
 		NLUServiceURL:          getEnv("NLU_SERVICE_URL", "http://localhost:8003"),          // Default for local dev
+		HubSpotAdapterURL:      getEnv("HUBSPOT_ADAPTER_URL", "http://localhost:8004"),      // Default for local dev
 	}
 }
 

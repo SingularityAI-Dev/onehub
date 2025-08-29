@@ -71,6 +71,8 @@ jobs:
           cd ../dashboard-generator && go mod tidy && go test ./...
           echo "  - Running nlu-service tests..."
           cd ../nlu-service && pip install -r requirements.txt && pytest
+          echo "  - Running hubspot-adapter service tests..."
+          cd ../hubspot-adapter && go mod tidy && go test ./...
           echo "TESTS COMPLETE."
 
   build:
